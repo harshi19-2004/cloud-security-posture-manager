@@ -3,7 +3,6 @@ import sys
 import json
 import time
 import logging
-import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -21,7 +20,6 @@ MAX_TRACKED     = 100
 
 
 def _record_response_time(ms: float):
-    """Record a response time. Keep last 100 only."""
     global _response_times
     _response_times.append(ms)
     if len(_response_times) > MAX_TRACKED:
@@ -29,7 +27,6 @@ def _record_response_time(ms: float):
 
 
 def get_avg_response_ms() -> float:
-    """Return average response time in milliseconds."""
     if not _response_times:
         return 0.0
     return round(sum(_response_times) / len(_response_times), 2)
@@ -52,8 +49,18 @@ def _clean_response(raw: str) -> str:
 
 
 class GroqClient:
-    MODEL        = "llama-3.3-70b-versatile"
-    RETRY_DELAYS = [2, 4, 8]
+    MODEL = "llama-3.3-70b-versatile"
+
+    # ── Optimised retry — faster delays ──────────────────────────────────────
+    RETRY_DELAYS = [1, 2, 4]
+
+    # ── Optimised token limits per endpoint ──────────────────────────────────
+    # Lower tokens = faster response = under 2s target
+    TOKENS = {
+        "describe": 600,
+        "recommend": 500,
+        "report": 800,
+    }
 
     def __init__(self):
         api_key = os.getenv("GROQ_API_KEY")
@@ -63,12 +70,17 @@ class GroqClient:
 
     def _call_groq(self, system_prompt: str,
                    user_message: str,
-                   temperature: float = 0.3) -> str | None:
+                   temperature: float = 0.3,
+                   max_tokens: int = 600) -> str | None:
+        """
+        Optimised Groq call.
+        - Tracks response time
+        - Returns None on failure (never crashes)
+        """
         last_error = None
 
         for attempt, delay in enumerate(self.RETRY_DELAYS, start=1):
             try:
-                # ── Track response time ───────────────────────────────────────
                 start_ms = time.time()
 
                 response = self.client.chat.completions.create(
@@ -78,12 +90,12 @@ class GroqClient:
                         {"role": "user",   "content": user_message},
                     ],
                     temperature=temperature,
-                    max_tokens=800,
+                    max_tokens=max_tokens,
                 )
 
                 elapsed_ms = (time.time() - start_ms) * 1000
                 _record_response_time(elapsed_ms)
-                logger.info(f"Groq response time: {elapsed_ms:.0f}ms")
+                logger.info(f"Groq response: {elapsed_ms:.0f}ms")
 
                 return response.choices[0].message.content
 
@@ -96,11 +108,12 @@ class GroqClient:
         logger.error(f"All Groq retries failed: {last_error}")
         return None
 
+    # ── /describe ─────────────────────────────────────────────────────────────
     def describe(self, resource: str) -> dict:
         if not resource or not resource.strip():
             return self._describe_fallback()
 
-        # ── Check cache first ─────────────────────────────────────────────────
+        # Check cache first
         try:
             from services.cache import get_cached, set_cached
             cached = get_cached("describe", resource)
@@ -112,14 +125,20 @@ class GroqClient:
         try:
             raw = self._call_groq(
                 _load_prompt("describe_system.txt"),
-                resource, 0.3)
+                resource,
+                temperature=0.3,
+                max_tokens=self.TOKENS["describe"]
+            )
+
+            # ── Fallback if Groq returns None ─────────────────────────────────
             if raw is None:
+                logger.error("describe() got None from Groq — returning fallback")
                 return self._describe_fallback()
+
             parsed = json.loads(_clean_response(raw))
             parsed["generated_at"] = _now()
             parsed["is_fallback"]  = False
 
-            # ── Save to cache ─────────────────────────────────────────────────
             try:
                 from services.cache import set_cached
                 set_cached("describe", resource, parsed)
@@ -127,11 +146,16 @@ class GroqClient:
                 pass
 
             return parsed
+
         except Exception as e:
             logger.error(f"describe() failed: {e}")
             return self._describe_fallback()
 
     def _describe_fallback(self) -> dict:
+        """
+        Fallback template when Groq fails.
+        Always returns is_fallback: true
+        """
         return {
             "description":  "AI description unavailable at this time.",
             "risk_level":   "UNKNOWN",
@@ -140,11 +164,11 @@ class GroqClient:
             "is_fallback":  True
         }
 
+    # ── /recommend ────────────────────────────────────────────────────────────
     def recommend(self, resource: str) -> dict:
         if not resource or not resource.strip():
             return self._recommend_fallback()
 
-        # ── Check cache first ─────────────────────────────────────────────────
         try:
             from services.cache import get_cached, set_cached
             cached = get_cached("recommend", resource)
@@ -156,9 +180,16 @@ class GroqClient:
         try:
             raw = self._call_groq(
                 _load_prompt("recommend_system.txt"),
-                resource, 0.4)
+                resource,
+                temperature=0.4,
+                max_tokens=self.TOKENS["recommend"]
+            )
+
+            # ── Fallback if Groq returns None ─────────────────────────────────
             if raw is None:
+                logger.error("recommend() got None from Groq — returning fallback")
                 return self._recommend_fallback()
+
             parsed = json.loads(_clean_response(raw))
             recs   = (parsed if isinstance(parsed, list)
                       else parsed.get("recommendations", []))
@@ -168,7 +199,6 @@ class GroqClient:
                 "is_fallback":     False
             }
 
-            # ── Save to cache ─────────────────────────────────────────────────
             try:
                 from services.cache import set_cached
                 set_cached("recommend", resource, result)
@@ -176,11 +206,16 @@ class GroqClient:
                 pass
 
             return result
+
         except Exception as e:
             logger.error(f"recommend() failed: {e}")
             return self._recommend_fallback()
 
     def _recommend_fallback(self) -> dict:
+        """
+        Fallback template when Groq fails.
+        Always returns is_fallback: true
+        """
         return {
             "recommendations": [
                 {"action_type": "REVIEW",
@@ -197,11 +232,11 @@ class GroqClient:
             "is_fallback":  True
         }
 
+    # ── /generate-report ──────────────────────────────────────────────────────
     def generate_report(self, environment: str) -> dict:
         if not environment or not environment.strip():
             return self._report_fallback()
 
-        # ── Check cache first ─────────────────────────────────────────────────
         try:
             from services.cache import get_cached, set_cached
             cached = get_cached("report", environment)
@@ -213,14 +248,20 @@ class GroqClient:
         try:
             raw = self._call_groq(
                 _load_prompt("report_system.txt"),
-                environment, 0.3)
+                environment,
+                temperature=0.3,
+                max_tokens=self.TOKENS["report"]
+            )
+
+            # ── Fallback if Groq returns None ─────────────────────────────────
             if raw is None:
+                logger.error("generate_report() got None — returning fallback")
                 return self._report_fallback()
+
             parsed = json.loads(_clean_response(raw))
             parsed["generated_at"] = _now()
             parsed["is_fallback"]  = False
 
-            # ── Save to cache ─────────────────────────────────────────────────
             try:
                 from services.cache import set_cached
                 set_cached("report", environment, parsed)
@@ -228,11 +269,16 @@ class GroqClient:
                 pass
 
             return parsed
+
         except Exception as e:
             logger.error(f"generate_report() failed: {e}")
             return self._report_fallback()
 
     def _report_fallback(self) -> dict:
+        """
+        Fallback template when Groq fails.
+        Always returns is_fallback: true
+        """
         return {
             "title":           "Security Posture Report — Unavailable",
             "summary":         "Report generation is temporarily unavailable.",
