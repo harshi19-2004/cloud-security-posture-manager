@@ -1,25 +1,13 @@
 """
 security_headers.py
-Day 8 — AI Developer 1
-
-Adds security headers to all Flask responses.
-Fixes OWASP ZAP Critical and High findings.
+Day 11 — Updated to fix all remaining ZAP findings
 """
 
 
 def apply_security_headers(response):
     """
-    Add all required security headers to every response.
-    Call this from Flask after_request hook.
-
-    Fixes these ZAP findings:
-    - Missing Anti-clickjacking Header
-    - X-Content-Type-Options Header Missing
-    - X-XSS-Protection Header Missing
-    - Strict-Transport-Security Header Missing
-    - Content-Security-Policy Header Missing
-    - Referrer-Policy Header Missing
-    - Permissions-Policy Header Missing
+    Add all security headers to every response.
+    Fixes ALL OWASP ZAP Critical and High findings.
     """
 
     # ── Prevent MIME type sniffing ────────────────────────────────────────────
@@ -33,32 +21,40 @@ def apply_security_headers(response):
 
     # ── Force HTTPS ───────────────────────────────────────────────────────────
     response.headers["Strict-Transport-Security"] = (
-        "max-age=31536000; includeSubDomains"
+        "max-age=31536000; includeSubDomains; preload"
     )
 
     # ── Content Security Policy ───────────────────────────────────────────────
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self'; "
+        "connect-src 'self'"
+    )
 
     # ── Referrer Policy ───────────────────────────────────────────────────────
-    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
     # ── Permissions Policy ────────────────────────────────────────────────────
     response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=()"
+        "geolocation=(), microphone=(), camera=(), "
+        "payment=(), usb=(), magnetometer=()"
     )
 
-    # ── Remove server info — hides Flask/Werkzeug version ────────────────────
-    response.headers.pop("Server", None)
+    # ── Cache control — prevent sensitive data caching ────────────────────────
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"]        = "no-cache"
+
+    # ── Remove server info ────────────────────────────────────────────────────
+    response.headers.pop("Server",       None)
     response.headers.pop("X-Powered-By", None)
 
     return response
 
 
 def get_security_headers_list() -> list:
-    """
-    Returns list of all security headers we apply.
-    Used by test_security.py to verify all headers present.
-    """
+    """Returns list of all security headers we apply."""
     return [
         "X-Content-Type-Options",
         "X-Frame-Options",
@@ -67,4 +63,5 @@ def get_security_headers_list() -> list:
         "Content-Security-Policy",
         "Referrer-Policy",
         "Permissions-Policy",
+        "Cache-Control",
     ]
