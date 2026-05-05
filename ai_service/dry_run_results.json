@@ -1,0 +1,45 @@
+{
+  "dry_run_date": "2026-05-05T09:15:23.106794+00:00",
+  "machine": "LAPTOP-5EBB93QO",
+  "model": "llama-3.3-70b-versatile",
+  "endpoints": {
+    "health": {
+      "endpoint": "GET /health",
+      "status_code": 200,
+      "response_ms": 1.59,
+      "status": "PASS",
+      "model": "llama-3.3-70b-versatile",
+      "uptime": "0h 0m 1s"
+    },
+    "describe": {
+      "endpoint": "POST /describe",
+      "status_code": 200,
+      "response_ms": 637.21,
+      "status": "PASS",
+      "risk_level": "CRITICAL",
+      "is_fallback": false,
+      "findings_count": 3
+    },
+    "recommend": {
+      "endpoint": "POST /recommend",
+      "status_code": 200,
+      "response_ms": 596.4,
+      "status": "PASS",
+      "recommendations": 3,
+      "is_fallback": false,
+      "first_action_type": "RESTRICT"
+    },
+    "report": {
+      "endpoint": "POST /generate-report",
+      "status_code": 200,
+      "response_ms": 1409.94,
+      "status": "PASS",
+      "title": "Cloud Security Posture Report \u2014 Production AWS",
+      "key_items": 5,
+      "recs_count": 5,
+      "is_fallback": false
+    }
+  },
+  "overall_status": "PASS",
+  "total_time_ms": 2645.14
+}
