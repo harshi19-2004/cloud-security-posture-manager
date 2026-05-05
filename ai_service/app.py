@@ -40,12 +40,18 @@ def create_app():
     def add_security_headers(response):
         return apply_security_headers(response)
 
+    # ── Pre-load sentence-transformers at startup ─────────────────────────────
+    from services.embeddings import preload_at_startup
+    preload_at_startup()
+
     # ── Root route ────────────────────────────────────────────────────────────
     @app.route("/", methods=["GET"])
     def home():
+        from services.embeddings import is_model_loaded
         return jsonify({
-            "message":   "Tool-59 AI Service is running",
-            "status":    "ok",
+            "message":      "Tool-59 AI Service is running",
+            "status":       "ok",
+            "model_loaded": is_model_loaded(),
             "endpoints": [
                 "POST /describe",
                 "POST /recommend",
