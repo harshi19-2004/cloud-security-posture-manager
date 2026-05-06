@@ -1,0 +1,27 @@
+{
+  "check_date": "2026-05-06T04:58:48.264463+00:00",
+  "model": "llama-3.3-70b-versatile",
+  "groq_key_active": true,
+  "endpoints": {
+    "describe": {
+      "status": "PASS",
+      "ms": 586.85,
+      "is_fallback": false,
+      "risk_level": "CRITICAL"
+    },
+    "recommend": {
+      "status": "PASS",
+      "ms": 1458.29,
+      "is_fallback": false,
+      "recs_count": 3
+    },
+    "report": {
+      "status": "PASS",
+      "ms": 1583.34,
+      "is_fallback": false,
+      "title": "Cloud Security Posture Report \u2014 Production AWS"
+    }
+  },
+  "demo_ready": true,
+  "overall_score": "5/5"
+}
